@@ -1,0 +1,9 @@
+Docs/
+.vscode
+.obj
+.o
+libftpp.a
+DS_Store
+*.mdtest_libftpp
+tests/
+*.md

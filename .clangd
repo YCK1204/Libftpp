@@ -1,0 +1,15 @@
+Index:
+  StandardLibrary: Yes
+Documentation:
+  CommentFormat: Doxygen
+Hover:
+  ShowAKA: No
+Completion:
+  # 함수 선택 시 인자 자리(placeholder)까지만 채움
+  ArgumentLists: FullPlaceholders
+Diagnostics:
+  # 컴파일러(-Wall -Wextra) 경고만 표시, clang-tidy / include 정리 경고는 끔
+  UnusedIncludes: None
+  MissingIncludes: None
+  ClangTidy:
+    Remove: '*'
