@@ -7,3 +7,4 @@ DS_Store
 *.mdtest_libftpp
 tests/
 *.md
+obj/
