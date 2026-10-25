@@ -10,6 +10,8 @@ class ThreadSafeQueue {
 public:
   void push_back(const TType &newElement);
   void push_front(const TType &newElement);
+  void push_back(TType &&newElement);
+  void push_front(TType &&newElement);
   TType pop_back();
   TType pop_front();
   bool empty();
@@ -30,6 +32,16 @@ template <typename TType>
 inline void ThreadSafeQueue<TType>::push_front(const TType &newElement) {
   Lock lock(m_mutex);
   m_deque.push_front(newElement);
+}
+template <typename TType>
+inline void ThreadSafeQueue<TType>::push_back(TType &&newElement) {
+  Lock lock(m_mutex);
+  m_deque.push_back(std::move(newElement));
+}
+template <typename TType>
+inline void ThreadSafeQueue<TType>::push_front(TType &&newElement) {
+  Lock lock(m_mutex);
+  m_deque.push_front(std::move(newElement));
 }
 
 template <typename TType>
