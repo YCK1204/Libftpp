@@ -12,6 +12,7 @@ public:
   void push_front(const TType &newElement);
   TType pop_back();
   TType pop_front();
+  bool empty();
 
 private:
   using Lock = std::lock_guard<std::mutex>;
@@ -51,6 +52,12 @@ inline TType ThreadSafeQueue<TType>::pop_front() {
   TType ret = std::move(m_deque.front());
   m_deque.pop_front();
   return ret;
+}
+template <typename TType>
+inline bool ThreadSafeQueue<TType>::empty() {
+  Lock lock(m_mutex);
+
+  return m_deque.empty();
 }
 
 #endif
