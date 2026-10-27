@@ -1,10 +1,14 @@
 #include "worker_pool.hpp"
-#include "IJobs.hpp"
 #include "thread.hpp"
 #include <memory>
 #include <mutex>
 #include <string>
 #include "thread_safe_iostream.hpp"
+
+IJobs::~IJobs() {}
+
+Job::Job(std::function<void()> func) : m_func(func) {}
+void Job::execute() { this->m_func(); }
 
 WorkerPool::WorkerPool(const uint8 &numOfThreads) : m_stopAll(false) {
   m_threads.reserve(numOfThreads);

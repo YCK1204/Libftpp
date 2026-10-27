@@ -2,13 +2,30 @@
 #define WORKER_POOL_HPP
 
 #include "Define.hpp"
-#include "IJobs.hpp"
 #include "thread.hpp"
 #include "thread_safe_queue.hpp"
 #include <condition_variable>
 #include <functional>
 #include <memory>
 #include <vector>
+
+#include <functional>
+class IJobs {
+public:
+  virtual ~IJobs();
+  virtual void execute() = 0;
+};
+
+#pragma region Job
+class Job : public IJobs {
+private:
+  std::function<void()> m_func;
+
+public:
+  Job(std::function<void()> func);
+  void execute() override;
+};
+#pragma endregion
 
 class WorkerPool {
 public:
