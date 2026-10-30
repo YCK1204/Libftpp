@@ -1,4 +1,6 @@
-#pragma once
+#ifndef DEFINE_HPP
+#define DEFINE_HPP
+
 #include <memory>
 #include <cstdint>
 
@@ -20,3 +22,4 @@ template <typename T>
 using UniquePtr = std::unique_ptr<T>;
 template <typename T>
 using WeakPtr = std::weak_ptr<T>;
+#endif

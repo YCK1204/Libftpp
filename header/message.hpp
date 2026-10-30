@@ -1,7 +1,7 @@
 #ifndef MESSAGE_HPP
 #define MESSAGE_HPP
 
-#include "Define.hpp"
+#include "define.hpp"
 #include "data_buffer.hpp"
 #include <ostream>
 #include <vector>

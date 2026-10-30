@@ -1,7 +1,7 @@
 #ifndef DATA_BUFFER_HPP
 #define DATA_BUFFER_HPP
 
-#include "Define.hpp"
+#include "define.hpp"
 #include <cstddef>
 #include <cstring>
 #include <map>

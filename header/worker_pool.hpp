@@ -1,7 +1,7 @@
 #ifndef WORKER_POOL_HPP
 #define WORKER_POOL_HPP
 
-#include "Define.hpp"
+#include "define.hpp"
 #include "thread.hpp"
 #include "thread_safe_queue.hpp"
 #include <condition_variable>
