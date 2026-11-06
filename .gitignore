@@ -9,3 +9,4 @@ test_libftpp_bonus
 Docs/
 *.md
 !README.md
+.cache/
