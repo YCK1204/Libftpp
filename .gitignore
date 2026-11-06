@@ -3,6 +3,7 @@ obj/
 *.d
 libftpp.a
 test_libftpp
+test_libftpp_bonus
 .vscode
 .DS_Store
 Docs/
