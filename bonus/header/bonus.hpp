@@ -3,5 +3,6 @@
 
 #include "string_format.hpp"
 #include "timer.hpp"
+#include "chronometer.hpp"
 
 #endif

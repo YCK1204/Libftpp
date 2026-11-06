@@ -1,10 +1,12 @@
 #include "libftpp.hpp"
 
 #include <chrono>
+#include <cmath>
 #include <iostream>
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <vector>
 
 static int g_failed = 0;
 
@@ -199,6 +201,117 @@ static void testTimerDuration() {
   CHECK(t.isRunning());
 }
 
+// ---------------------------------------------------------------- Chronometer
+
+static double sum(const std::vector<double> &values) {
+  double total = 0;
+  for (std::size_t i = 0; i < values.size(); ++i)
+    total += values[i];
+  return total;
+}
+
+static void testChronometerIdle() {
+  std::cout << "[Chronometer] idle state" << std::endl;
+  Chronometer c;
+  CHECK(!c.isRunning());
+  CHECK(c.elapsed() == 0.0);
+  CHECK(c.laps().empty());
+  CHECK(c.lap() == 0.0); // 시작 전 lap은 0, 기록 안 함
+  CHECK(c.laps().empty());
+  c.stop();
+  c.resume(); // 시작 전 stop/resume은 무시
+  CHECK(!c.isRunning());
+}
+
+static void testChronometerRunning() {
+  std::cout << "[Chronometer] elapsed while running" << std::endl;
+  Chronometer c;
+  c.start();
+  CHECK(c.isRunning());
+  sleepMs(50);
+  CHECK(around(c.elapsed(), 0.05));
+}
+
+static void testChronometerStopResume() {
+  std::cout << "[Chronometer] stop / resume" << std::endl;
+  Chronometer c;
+  c.start();
+  sleepMs(50);
+  c.stop();
+  CHECK(!c.isRunning());
+  double frozen = c.elapsed();
+  sleepMs(100);
+  CHECK(c.elapsed() == frozen); // 멈춘 동안 안 흐름
+  c.resume();
+  CHECK(c.isRunning());
+  sleepMs(50);
+  CHECK(around(c.elapsed(), 0.1)); // 멈춘 100ms 제외
+}
+
+static void testChronometerLaps() {
+  std::cout << "[Chronometer] laps" << std::endl;
+  Chronometer c;
+  c.start();
+  sleepMs(50);
+  double first = c.lap();
+  CHECK(around(first, 0.05));
+  CHECK(c.isRunning()); // lap은 시계를 멈추지 않음
+  sleepMs(30);
+  double second = c.lap();
+  CHECK(around(second, 0.03)); // 누적이 아니라 직전 lap부터의 구간
+  CHECK(c.laps().size() == 2);
+  CHECK(c.laps()[0] == first && c.laps()[1] == second);
+  CHECK(around(c.elapsed(), 0.08)); // elapsed는 총 시간
+
+  c.stop();
+  sleepMs(50);
+  c.resume();
+  sleepMs(20);
+  CHECK(around(c.lap(), 0.02)); // 멈춘 구간은 lap에서도 제외
+  CHECK(c.elapsed() - sum(c.laps()) < SLACK);
+}
+
+static void testChronometerLapWhileStopped() {
+  std::cout << "[Chronometer] lap while stopped" << std::endl;
+  Chronometer c;
+  c.start();
+  sleepMs(30);
+  c.lap();
+  sleepMs(30);
+  c.stop();
+  double frozen = c.elapsed();
+
+  double last = c.lap(); // 멈춘 시점까지를 마지막 구간으로 기록
+  CHECK(around(last, 0.03));
+  CHECK(!c.isRunning()); // lap 후에도 멈춘 상태 유지
+  CHECK(c.laps().size() == 2);
+  CHECK(c.lap() == 0.0); // 연속 lap은 빈 구간이라 기록 안 함
+  CHECK(c.laps().size() == 2);
+
+  sleepMs(50);
+  CHECK(c.elapsed() == frozen); // 이중 집계, 재시작 없음
+  CHECK(std::fabs(sum(c.laps()) - frozen) < 1e-9); // 부동소수 덧셈 오차만 허용
+}
+
+static void testChronometerRestartAndReset() {
+  std::cout << "[Chronometer] restart / reset" << std::endl;
+  Chronometer c;
+  c.start();
+  sleepMs(30);
+  c.lap();
+  c.start(); // 0부터 다시, 랩 기록도 초기화
+  CHECK(c.isRunning());
+  CHECK(c.laps().empty());
+  CHECK(c.elapsed() < SLACK);
+  sleepMs(20);
+  CHECK(around(c.lap(), 0.02)); // 이전 lap 기준점이 남아있지 않음
+
+  c.reset();
+  CHECK(!c.isRunning());
+  CHECK(c.elapsed() == 0.0);
+  CHECK(c.laps().empty());
+}
+
 int main() {
   testStringFormatBasic();
   testStringFormatNoReinterpretation();
@@ -210,6 +323,13 @@ int main() {
   testTimerIgnoredCalls();
   testTimerStopAndRestart();
   testTimerDuration();
+
+  testChronometerIdle();
+  testChronometerRunning();
+  testChronometerStopResume();
+  testChronometerLaps();
+  testChronometerLapWhileStopped();
+  testChronometerRestartAndReset();
 
   std::cout << std::endl;
   if (g_failed) {
