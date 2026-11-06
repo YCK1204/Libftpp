@@ -2,5 +2,6 @@
 #define BONUS_HPP
 
 #include "string_format.hpp"
+#include "timer.hpp"
 
 #endif
