@@ -1,10 +1,12 @@
 #ifndef LIBFTPP_HPP
 #define LIBFTPP_HPP
 
-#include "data_structures.hpp"
-#include "network.hpp"
-#include "design_patterns.hpp"
-#include "threading.hpp"
-#include "thread_safe_iostream.hpp"
+#include "mandatory/header/data_structures.hpp"
+#include "mandatory/header/network.hpp"
+#include "mandatory/header/design_patterns.hpp"
+#include "mandatory/header/threading.hpp"
+#include "mandatory/header/thread_safe_iostream.hpp"
+
+#include "bonus/header/bonus.hpp"
 
 #endif

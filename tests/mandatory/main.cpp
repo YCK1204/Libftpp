@@ -880,7 +880,7 @@ static int rawConnect(int port) {
 }
 
 static void testNetworkBasic() {
-  const int port = 46101;
+  const int port = 8080;
   Server server;
   server.start(port);
 
