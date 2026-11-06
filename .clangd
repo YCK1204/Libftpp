@@ -7,7 +7,8 @@ CompileFlags:
     - -Wextra
     - -Werror
     - -I/home/yeckim/Libftpp
-    - -I/home/yeckim/Libftpp/header
+    - -I/home/yeckim/Libftpp/mandatory/header
+    - -I/home/yeckim/Libftpp/bonus/header
   Compiler: c++
 Index:
   StandardLibrary: Yes
