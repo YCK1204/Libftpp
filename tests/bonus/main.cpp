@@ -2,6 +2,8 @@
 
 #include <chrono>
 #include <cmath>
+#include <cstdio>
+#include <fstream>
 #include <iostream>
 #include <memory>
 #include <stdexcept>
@@ -22,15 +24,15 @@ static int g_failed = 0;
     }                                                                          \
   } while (0)
 
-#define CHECK_THROWS(expr, ExType)                                             \
-  do {                                                                         \
-    bool thrown = false;                                                       \
-    try {                                                                      \
-      expr;                                                                    \
-    } catch (const ExType &) {                                                 \
-      thrown = true;                                                           \
-    }                                                                          \
-    CHECK(thrown && #expr " throws " #ExType);                                 \
+#define CHECK_THROWS(expr, ExType)             \
+  do {                                         \
+    bool thrown = false;                       \
+    try {                                      \
+      expr;                                    \
+    } catch (const ExType &) {                 \
+      thrown = true;                           \
+    }                                          \
+    CHECK(thrown && #expr " throws " #ExType); \
   } while (0)
 
 static void sleepMs(int ms) {
@@ -290,7 +292,7 @@ static void testChronometerLapWhileStopped() {
   CHECK(c.laps().size() == 2);
 
   sleepMs(50);
-  CHECK(c.elapsed() == frozen); // 이중 집계, 재시작 없음
+  CHECK(c.elapsed() == frozen);                    // 이중 집계, 재시작 없음
   CHECK(std::fabs(sum(c.laps()) - frozen) < 1e-9); // 부동소수 덧셈 오차만 허용
 }
 
@@ -428,6 +430,176 @@ static void testRingBufferReleasesSlots() {
   CHECK(s.front() == "b" && s.back() == "c");
 }
 
+// ---------------------------------------------------------------- Logger
+
+static bool endsWith(const std::string &s, const std::string &tail) {
+  return s.size() >= tail.size() &&
+         s.compare(s.size() - tail.size(), tail.size(), tail) == 0;
+}
+
+// 테스트마다 같은 상태에서 시작. 콘솔은 꺼서 테스트 출력을 더럽히지 않음
+static void resetLogger(std::size_t historySize) {
+  Logger::setConsole(false);
+  Logger::closeFile();
+  Logger::setLevel(Logger::Level::Debug);
+  Logger::setHistorySize(0);
+  Logger::setHistorySize(historySize);
+}
+
+static void testLoggerFormat() {
+  std::cout << "[Logger] line format" << std::endl;
+  resetLogger(4);
+  Logger::info("client {0} connected", 3);
+  std::vector<std::string> h = Logger::history();
+  CHECK(h.size() == 1);
+  if (h.size() != 1)
+    return;
+  // [YYYY-MM-DD HH:MM:SS.mmm] [INFO ] client 3 connected
+  const std::string &line = h[0];
+  CHECK(line.size() > 25);
+  CHECK(line[0] == '[' && line[5] == '-' && line[8] == '-');
+  CHECK(line[11] == ' ' && line[14] == ':' && line[17] == ':');
+  CHECK(line[20] == '.' && line[24] == ']');
+  CHECK(endsWith(line, "] [INFO ] client 3 connected"));
+  CHECK(line.find('\n') == std::string::npos); // history엔 개행 없음
+
+  Logger::debug("d");
+  Logger::warn("w");
+  Logger::error("e");
+  h = Logger::history();
+  CHECK(h.size() == 4);
+  if (h.size() == 4) {
+    CHECK(endsWith(h[1], "[DEBUG] d"));
+    CHECK(endsWith(h[2], "[WARN ] w"));
+    CHECK(endsWith(h[3], "[ERROR] e"));
+  }
+}
+
+static void testLoggerLevelFilter() {
+  std::cout << "[Logger] level filter" << std::endl;
+  resetLogger(10);
+  Logger::setLevel(Logger::Level::Warn);
+  CHECK(Logger::level() == Logger::Level::Warn);
+  Logger::debug("no");
+  Logger::info("no");
+  Logger::warn("yes");
+  Logger::error("yes");
+  Logger::log(Logger::Level::Info, "no");
+  Logger::log(Logger::Level::Error, "yes");
+  std::vector<std::string> h = Logger::history();
+  CHECK(h.size() == 3);
+  for (std::size_t i = 0; i < h.size(); ++i)
+    CHECK(endsWith(h[i], "yes"));
+}
+
+static void testLoggerOff() {
+  std::cout << "[Logger] Off" << std::endl;
+  resetLogger(10);
+  Logger::setLevel(Logger::Level::Off);
+  Logger::debug("x");
+  Logger::error("x");
+  Logger::log(Logger::Level::Error, "x");
+  CHECK(Logger::history().empty()); // Off면 전부 꺼짐
+
+  Logger::setLevel(Logger::Level::Debug);
+  Logger::log(Logger::Level::Off, "x");
+  CHECK(Logger::history().empty()); // Off는 메시지 레벨이 아님
+}
+
+static void testLoggerHistory() {
+  std::cout << "[Logger] history" << std::endl;
+  resetLogger(0);
+  Logger::info("not kept");
+  CHECK(Logger::history().empty()); // 기본 0: 보관 안 함
+
+  Logger::setHistorySize(3);
+  for (int i = 0; i < 5; ++i)
+    Logger::info("m{0}", i);
+  std::vector<std::string> h = Logger::history();
+  CHECK(h.size() == 3);
+  if (h.size() == 3)
+    CHECK(endsWith(h[0], "m2") && endsWith(h[2], "m4")); // 오래된 순
+
+  Logger::setHistorySize(5); // 키우면 기존 보관분 유지
+  h = Logger::history();
+  CHECK(h.size() == 3);
+
+  Logger::setHistorySize(2); // 줄이면 최신 것만 남음
+  h = Logger::history();
+  CHECK(h.size() == 2);
+  if (h.size() == 2)
+    CHECK(endsWith(h[0], "m3") && endsWith(h[1], "m4"));
+
+  h.clear(); // 복사본이라 원본에 영향 없음
+  CHECK(Logger::history().size() == 2);
+
+  Logger::setHistorySize(0); // 0이면 비우고 보관 끔
+  CHECK(Logger::history().empty());
+  Logger::info("not kept");
+  CHECK(Logger::history().empty());
+}
+
+static std::vector<std::string> readLines(const std::string &path) {
+  std::vector<std::string> lines;
+  std::ifstream in(path.c_str());
+  std::string line;
+  while (std::getline(in, line))
+    lines.push_back(line);
+  return lines;
+}
+
+static void testLoggerFile() {
+  std::cout << "[Logger] file" << std::endl;
+  const std::string path = "test_logger_bonus.log";
+  std::remove(path.c_str());
+  resetLogger(0);
+
+  Logger::openFile(path);
+  Logger::info("first");
+  Logger::closeFile();
+  Logger::info("not in file"); // 닫은 뒤엔 기록 안 함
+
+  Logger::openFile(path); // append: 기존 내용 유지
+  Logger::warn("second");
+  Logger::closeFile();
+
+  std::vector<std::string> lines = readLines(path);
+  CHECK(lines.size() == 2);
+  if (lines.size() == 2) {
+    CHECK(endsWith(lines[0], "[INFO ] first"));
+    CHECK(endsWith(lines[1], "[WARN ] second"));
+  }
+  std::remove(path.c_str());
+
+  CHECK_THROWS(Logger::openFile("/nonexistent_dir_libftpp/x.log"),
+               std::runtime_error);
+}
+
+static void testLoggerThreads() {
+  std::cout << "[Logger] concurrent logging" << std::endl;
+  const int threads = 4;
+  const int perThread = 200;
+  resetLogger(threads * perThread);
+
+  std::vector<std::thread> pool;
+  for (int t = 0; t < threads; ++t)
+    pool.push_back(std::thread([t]() {
+      for (int i = 0; i < perThread; ++i)
+        Logger::info("t{0} i{1}", t, i);
+    }));
+  for (std::size_t i = 0; i < pool.size(); ++i)
+    pool[i].join();
+
+  std::vector<std::string> h = Logger::history();
+  CHECK(h.size() == static_cast<std::size_t>(threads * perThread));
+  bool wellFormed = true;
+  for (std::size_t i = 0; i < h.size(); ++i)
+    if (h[i][0] != '[' || h[i].find("] [INFO ] t") == std::string::npos)
+      wellFormed = false;
+  CHECK(wellFormed); // 줄끼리 섞이지 않음
+  resetLogger(0);
+}
+
 int main() {
   testStringFormatBasic();
   testStringFormatNoReinterpretation();
@@ -454,6 +626,13 @@ int main() {
   testRingBufferClear();
   testRingBufferAccess();
   testRingBufferReleasesSlots();
+
+  testLoggerFormat();
+  testLoggerLevelFilter();
+  testLoggerOff();
+  testLoggerHistory();
+  testLoggerFile();
+  testLoggerThreads();
 
   std::cout << std::endl;
   if (g_failed) {

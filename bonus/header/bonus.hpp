@@ -5,5 +5,6 @@
 #include "timer.hpp"
 #include "chronometer.hpp"
 #include "ring_buffer.hpp"
+#include "logger.hpp"
 
 #endif
