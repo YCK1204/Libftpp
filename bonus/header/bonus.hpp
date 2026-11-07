@@ -4,5 +4,6 @@
 #include "string_format.hpp"
 #include "timer.hpp"
 #include "chronometer.hpp"
+#include "ring_buffer.hpp"
 
 #endif

@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cmath>
 #include <iostream>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -312,6 +313,121 @@ static void testChronometerRestartAndReset() {
   CHECK(c.laps().empty());
 }
 
+// ---------------------------------------------------------------- RingBuffer
+
+typedef RingBuffer<int> IntRing;
+
+static std::string dump(const IntRing &ring) {
+  std::string out;
+  for (std::size_t i = 0; i < ring.size(); ++i)
+    out += std::to_string(ring[i]) + ",";
+  return out;
+}
+
+static void testRingBufferBasic() {
+  std::cout << "[RingBuffer] basic" << std::endl;
+  CHECK_THROWS(IntRing(0), std::invalid_argument);
+
+  IntRing r(3);
+  CHECK(r.empty() && !r.full());
+  CHECK(r.capacity() == 3);
+  CHECK(r.policy() == IntRing::OverflowPolicy::OVERWRITE);
+  CHECK(r.push(1) && r.push(2) && r.push(3));
+  CHECK(r.full() && r.size() == 3);
+  CHECK(dump(r) == "1,2,3,");
+  CHECK(r.front() == 1 && r.back() == 3);
+  CHECK(r.at(1) == 2);
+  CHECK_THROWS(r.at(3), std::out_of_range);
+}
+
+static void testRingBufferOverwrite() {
+  std::cout << "[RingBuffer] overwrite" << std::endl;
+  IntRing r(3);
+  r.push(1);
+  r.push(2);
+  r.push(3);
+  CHECK(r.push(4)); // 가장 오래된 1이 빠짐
+  CHECK(dump(r) == "2,3,4,");
+  for (int i = 5; i <= 10; ++i) // 인덱스가 여러 바퀴 돌아도 순서 유지
+    r.push(i);
+  CHECK(dump(r) == "8,9,10,");
+  CHECK(r.front() == 8 && r.back() == 10);
+  CHECK(r.size() == 3);
+}
+
+static void testRingBufferReject() {
+  std::cout << "[RingBuffer] reject" << std::endl;
+  IntRing r(2, IntRing::OverflowPolicy::REJECT);
+  CHECK(r.push(1) && r.push(2));
+  CHECK(!r.push(3));
+  CHECK(dump(r) == "1,2,");
+}
+
+static void testRingBufferPop() {
+  std::cout << "[RingBuffer] pop" << std::endl;
+  IntRing r(3);
+  for (int i = 1; i <= 5; ++i)
+    r.push(i);
+  CHECK(r.pop() == 3 && r.pop() == 4); // 오래된 것부터
+  CHECK(dump(r) == "5,");
+  r.push(6);
+  r.push(7); // pop 후 다시 채워도 순서 유지
+  CHECK(dump(r) == "5,6,7,");
+  CHECK(r.pop() == 5 && r.pop() == 6 && r.pop() == 7);
+  CHECK(r.empty());
+  CHECK_THROWS(r.pop(), std::out_of_range);
+  CHECK_THROWS(r.front(), std::out_of_range);
+  CHECK_THROWS(r.back(), std::out_of_range);
+}
+
+static void testRingBufferClear() {
+  std::cout << "[RingBuffer] clear" << std::endl;
+  IntRing r(3);
+  r.push(1);
+  r.push(2);
+  r.clear();
+  CHECK(r.empty() && r.size() == 0);
+  CHECK(r.capacity() == 3); // 칸 수는 그대로
+  CHECK(r.push(7));
+  CHECK(dump(r) == "7," && r.front() == 7 && r.back() == 7);
+}
+
+static void testRingBufferAccess() {
+  std::cout << "[RingBuffer] const access / modify" << std::endl;
+  IntRing r(2);
+  r.push(1);
+  r.push(2);
+  r.front() = 10;
+  r[1] = 20;
+  const IntRing &cr = r;
+  CHECK(cr.front() == 10 && cr.back() == 20);
+  CHECK(cr[0] == 10 && cr.at(1) == 20);
+  CHECK_THROWS(cr.at(2), std::out_of_range);
+}
+
+static void testRingBufferReleasesSlots() {
+  std::cout << "[RingBuffer] releases popped values" << std::endl;
+  std::shared_ptr<int> p = std::make_shared<int>(5);
+  RingBuffer<std::shared_ptr<int>> r(2);
+  r.push(p);
+  CHECK(p.use_count() == 2);
+  r.pop();
+  CHECK(p.use_count() == 1); // pop한 칸이 참조를 놓음
+  r.push(p);
+  r.clear();
+  CHECK(p.use_count() == 1);
+  r.push(p);
+  r.push(std::make_shared<int>(1));
+  r.push(std::make_shared<int>(2)); // 덮어쓰기로 밀려나도 놓음
+  CHECK(p.use_count() == 1);
+
+  RingBuffer<std::string> s(2);
+  s.push("a");
+  s.push("b");
+  s.push("c");
+  CHECK(s.front() == "b" && s.back() == "c");
+}
+
 int main() {
   testStringFormatBasic();
   testStringFormatNoReinterpretation();
@@ -330,6 +446,14 @@ int main() {
   testChronometerLaps();
   testChronometerLapWhileStopped();
   testChronometerRestartAndReset();
+
+  testRingBufferBasic();
+  testRingBufferOverwrite();
+  testRingBufferReject();
+  testRingBufferPop();
+  testRingBufferClear();
+  testRingBufferAccess();
+  testRingBufferReleasesSlots();
 
   std::cout << std::endl;
   if (g_failed) {
