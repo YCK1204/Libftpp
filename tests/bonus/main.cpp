@@ -600,6 +600,147 @@ static void testLoggerThreads() {
   resetLogger(0);
 }
 
+// ---------------------------------------------------------------- Scheduler
+
+static void testSchedulerAfter() {
+  std::cout << "[Scheduler] after" << std::endl;
+  Scheduler s;
+  int runs = 0;
+  Scheduler::TaskId id = s.after(0.05, [&runs]() { ++runs; });
+  CHECK(id != 0); // 0은 "없음"
+  CHECK(s.has(id) && s.size() == 1);
+  s.update();
+  CHECK(runs == 0); // 아직 때가 아님
+  sleepMs(70);
+  s.update();
+  CHECK(runs == 1);
+  CHECK(!s.has(id) && s.size() == 0); // 한 번 실행 후 제거
+  s.update();
+  CHECK(runs == 1);
+
+  int zero = 0;
+  s.after(0, [&zero]() { ++zero; });
+  s.update();
+  CHECK(zero == 1); // 0초면 다음 update에서 실행
+}
+
+static void testSchedulerEvery() {
+  std::cout << "[Scheduler] every" << std::endl;
+  Scheduler s;
+  int runs = 0;
+  Scheduler::TaskId id = s.every(0.05, [&runs]() { ++runs; });
+  s.update();
+  CHECK(runs == 0); // 첫 실행은 interval 뒤
+  sleepMs(70);
+  for (int i = 0; i < 10; ++i)
+    s.update();
+  CHECK(runs == 1); // 늦게 불려도 몰아서 실행 안 함, 바로 다시 실행도 안 함
+  sleepMs(70);
+  s.update();
+  CHECK(runs == 2);
+  CHECK(s.has(id)); // 반복 작업은 계속 남음
+
+  CHECK(s.cancel(id));
+  CHECK(!s.cancel(id)); // 이미 없음
+  sleepMs(70);
+  s.update();
+  CHECK(runs == 2);
+}
+
+static void testSchedulerInvalid() {
+  std::cout << "[Scheduler] invalid arguments" << std::endl;
+  Scheduler s;
+  CHECK_THROWS(s.after(-1, []() {}), std::invalid_argument);
+  CHECK_THROWS(s.every(0, []() {}), std::invalid_argument);
+  CHECK_THROWS(s.every(-1, []() {}), std::invalid_argument);
+  CHECK(s.size() == 0);
+  CHECK(!s.cancel(0) && !s.has(0) && !s.has(12345));
+}
+
+static void testSchedulerIdsAndOrder() {
+  std::cout << "[Scheduler] ids and order" << std::endl;
+  Scheduler s;
+  std::vector<int> order;
+  Scheduler::TaskId a = s.after(0, [&order]() { order.push_back(1); });
+  Scheduler::TaskId b = s.after(0, [&order]() { order.push_back(2); });
+  Scheduler::TaskId c = s.after(0, [&order]() { order.push_back(3); });
+  CHECK(a < b && b < c);
+  s.update();
+  CHECK(order.size() == 3 && order[0] == 1 && order[1] == 2 && order[2] == 3);
+
+  s.clear();
+  Scheduler::TaskId d = s.after(1, []() {});
+  CHECK(d > c); // clear 후에도 ID 재사용 안 함
+  s.clear();
+  CHECK(s.size() == 0 && !s.has(d));
+}
+
+static void testSchedulerCallbacksModify() {
+  std::cout << "[Scheduler] callbacks modifying scheduler" << std::endl;
+  {
+    Scheduler s; // 콜백에서 등록: 이번 update에선 실행 안 함
+    int inner = 0;
+    s.after(0, [&s, &inner]() { s.after(0, [&inner]() { ++inner; }); });
+    s.update();
+    CHECK(inner == 0 && s.size() == 1);
+    s.update();
+    CHECK(inner == 1 && s.size() == 0);
+  }
+  {
+    Scheduler s; // 반복 작업이 자기 자신 cancel
+    int runs = 0;
+    Scheduler::TaskId self = 0;
+    self = s.every(0.01, [&s, &runs, &self]() {
+      ++runs;
+      s.cancel(self);
+    });
+    sleepMs(30);
+    s.update();
+    CHECK(runs == 1 && !s.has(self));
+    sleepMs(30);
+    s.update();
+    CHECK(runs == 1);
+  }
+  {
+    Scheduler s; // 다른 작업 cancel: 아직 실행 전이면 실행 안 함
+    int b = 0;
+    Scheduler::TaskId idB = 0;
+    s.after(0, [&s, &idB]() { s.cancel(idB); });
+    idB = s.after(0, [&b]() { ++b; });
+    s.update();
+    CHECK(b == 0 && s.size() == 0);
+  }
+  {
+    Scheduler s; // clear: 나머지 실행도 멈춤
+    int b = 0;
+    s.after(0, [&s]() { s.clear(); });
+    s.after(0, [&b]() { ++b; });
+    s.every(0.01, [&b]() { ++b; });
+    sleepMs(20);
+    s.update();
+    CHECK(b == 0 && s.size() == 0);
+  }
+}
+
+static void testSchedulerThrowingCallback() {
+  std::cout << "[Scheduler] throwing callback" << std::endl;
+  Scheduler s;
+  int after = 0;
+  Scheduler::TaskId once = s.after(0, []() { throw std::runtime_error("x"); });
+  s.after(0, [&after]() { ++after; });
+  CHECK_THROWS(s.update(), std::runtime_error);
+  CHECK(!s.has(once));          // 한 번 실행용은 제거된 상태
+  CHECK(after == 0 && s.size() == 1);
+  s.update();                   // 나머지는 다음 update에서
+  CHECK(after == 1 && s.size() == 0);
+
+  Scheduler::TaskId rep = s.every(0.01, []() { throw std::runtime_error("x"); });
+  sleepMs(20);
+  CHECK_THROWS(s.update(), std::runtime_error);
+  CHECK(s.has(rep));            // 반복용은 다시 예약된 상태
+  s.update();                   // 방금 재시작해서 바로 다시 던지지 않음
+}
+
 int main() {
   testStringFormatBasic();
   testStringFormatNoReinterpretation();
@@ -633,6 +774,13 @@ int main() {
   testLoggerHistory();
   testLoggerFile();
   testLoggerThreads();
+
+  testSchedulerAfter();
+  testSchedulerEvery();
+  testSchedulerInvalid();
+  testSchedulerIdsAndOrder();
+  testSchedulerCallbacksModify();
+  testSchedulerThrowingCallback();
 
   std::cout << std::endl;
   if (g_failed) {
